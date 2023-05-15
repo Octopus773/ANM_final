@@ -7,8 +7,10 @@ use std::path::Path;
 
 #[path = "csv.rs"]
 mod my_csv;
+mod tweaks;
 
 use my_csv::read_service_csv;
+use tweaks::service_peers_check;
 
 fn get_datas_from_series(series: &[&Series]) -> Vec<Vec<f64>> {
     let datas = series
@@ -83,7 +85,7 @@ fn main() {
         .into_iter()
         .filter_map(|dir| dir.ok())
         .filter(|dir| dir.path().is_dir())
-        // .par_bridge()
+        .par_bridge()
         .map(|case| {
             let mut nb_root_causes = case
                 .path()
@@ -126,7 +128,7 @@ fn main() {
                             let d = e_diagnosis(&datas[0], &datas[1]);
                             (col, d)
                         })
-                        .filter(|(_, d)| *d < 0.005);
+                        .filter(|(_, d)| *d < 0.05);
 
                     (
                         file_name.to_str().unwrap().to_owned(),
@@ -134,6 +136,15 @@ fn main() {
                     )
                 })
                 .collect::<Vec<_>>();
+
+            match service_peers_check(&nb_root_causes) {
+                Some(peer) => {
+                    println!("{} has {} peer root causes", case.file_name().to_str().unwrap(), peer);
+                    let idx = nb_root_causes.iter().position(|el| el.0 == peer).unwrap();
+                    nb_root_causes[idx].1 += 50;
+                },
+                None => (),
+            }
 
             nb_root_causes.sort_by_key(|el| el.1);
             let nb_root_causes = nb_root_causes
