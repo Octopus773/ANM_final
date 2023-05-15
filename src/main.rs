@@ -1,4 +1,6 @@
 use polars::prelude::*;
+use rayon::prelude::*;
+use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
@@ -19,7 +21,11 @@ fn get_datas_from_series(series: &[&Series]) -> Vec<Vec<f64>> {
                 .to_owned()
         })
         .into_iter()
-        .map(|it| it.into_iter().map(|el| el.unwrap_or(0.0)).collect::<Vec<_>>())
+        .map(|it| {
+            it.into_iter()
+                .map(|el| el.unwrap_or(0.0))
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
 
     datas
@@ -69,66 +75,75 @@ fn main() {
         );
     }
 
-    let mut root_causes: Vec<Vec<String>> = vec![];
+    let root_causes = error_data_folder
+        .read_dir()
+        .unwrap()
+        .into_iter()
+        .filter_map(|dir| dir.ok())
+        .filter(|dir| dir.path().is_dir())
+        .par_bridge()
+        .map(|case| {
+            let mut nb_root_causes = case
+                .path()
+                .read_dir()
+                .unwrap()
+                .into_iter()
+                .filter_map(|file| file.ok())
+                .filter(|file| file.file_name().to_str().unwrap().ends_with(".csv"))
+                .par_bridge()
+                .map(|file| {
+                    let services = read_service_csv(&file.path().to_str().unwrap());
+                    let file_name = file.file_name();
 
-    for case in error_data_folder.read_dir().unwrap() {
-        let case = case.unwrap();
-        let mut nb_root_causes = case
-            .path()
-            .read_dir()
-            .unwrap()
-            .into_iter()
-            .filter_map(|file| file.ok())
-            .filter(|file| file.file_name().to_str().unwrap().ends_with(".csv"))
-            .map(|file| {
-                let services = read_service_csv(&file.path().to_str().unwrap());
-                let file_name = file.file_name();
+                    let service_train_data = train_data.get(file_name.to_str().unwrap()).unwrap();
 
-                let service_train_data = train_data.get(file_name.to_str().unwrap()).unwrap();
+                    let data = services
+                        .join(
+                            &service_train_data,
+                            ["time"],
+                            ["time"],
+                            JoinType::Left,
+                            Some("_train".to_string()),
+                        )
+                        .unwrap()
+                        .lazy()
+                        .select([col("*").exclude(["timestamp", "time"])])
+                        .collect()
+                        .unwrap();
 
-                let data = services
-                    .join(
-                        &service_train_data,
-                        ["time"],
-                        ["time"],
-                        JoinType::Left,
-                        Some("_train".to_string()),
+                    let columns = data.get_column_names();
+                    let columns = columns.iter().take(columns.len() / 2);
+
+                    let file_root_causes = columns
+                        .map(|col| {
+                            let series = data.columns(&[*col, &format!("{}_train", col)]).unwrap();
+
+                            let datas = get_datas_from_series(&series);
+
+                            let d = e_diagnosis(&datas[0], &datas[1]);
+                            (col, d)
+                        })
+                        .filter(|(_, d)| *d < 0.05);
+
+                    (
+                        file_name.to_str().unwrap().to_owned(),
+                        file_root_causes.count(),
                     )
-                    .unwrap()
-                    .lazy()
-                    .select([col("*").exclude(["timestamp", "time"])])
-                    .collect()
-                    .unwrap();
+                })
+                .collect::<Vec<_>>();
 
-                let columns = data.get_column_names();
-                let columns = columns.iter().take(columns.len() / 2);
+            nb_root_causes.sort_by_key(|el| el.1);
+            let nb_root_causes = nb_root_causes
+                .iter()
+                .rev()
+                .map(|x| x.0.to_owned())
+                .collect::<Vec<_>>();
 
-                let file_root_causes = columns
-                    .map(|col| {
-                        let series = data.columns(&[*col, &format!("{}_train", col)]).unwrap();
+            nb_root_causes
+        })
+        .collect::<Vec<_>>();
 
-                        let datas = get_datas_from_series(&series);
+    let json = json!(root_causes);
 
-                        let d = e_diagnosis(&datas[0], &datas[1]);
-                        (col, d)
-                    })
-                    .filter(|(_, d)| *d < 0.05);
-
-                (
-                    file_name.to_str().unwrap().to_owned(),
-                    file_root_causes.count(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        nb_root_causes.sort_by_key(|el| el.1);
-        let nb_root_causes = nb_root_causes
-            .iter()
-            .rev()
-            .map(|x| x.0.to_owned())
-            .collect::<Vec<_>>();
-
-        root_causes.push(nb_root_causes);
-    }
-    println!("{:?}", root_causes);
+    std::fs::write("/tmp/anm.json", json.to_string()).unwrap();
 }
