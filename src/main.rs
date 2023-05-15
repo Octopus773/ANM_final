@@ -38,7 +38,9 @@ fn e_diagnosis(s_a: &[f64], s_n: &[f64]) -> f64 {
     let variance_a = s_a.iter().map(|el| (el - mean_a).powi(2)).sum::<f64>() / s_a.len() as f64;
     let variance_n = s_n.iter().map(|el| (el - mean_n).powi(2)).sum::<f64>() / s_n.len() as f64;
 
-    if variance_a == 0.0 || variance_n == 0.0 {
+    if variance_a == 0.0 && variance_n == 0.0 {
+        return 1.0; // big value to not be considered as a root cause
+    } else if variance_a == 0.0 || variance_n == 0.0 {
         return 0.0;
     }
 
@@ -47,7 +49,7 @@ fn e_diagnosis(s_a: &[f64], s_n: &[f64]) -> f64 {
         .zip(s_n.iter())
         .map(|(a, n)| (a - mean_a) * (n - mean_n))
         .sum::<f64>()
-        / s_a.len() as f64;
+        / (s_a.len() - 1) as f64;
 
     covariance_a_n.powi(2) / (variance_a * variance_n).sqrt()
 }
@@ -75,13 +77,13 @@ fn main() {
         );
     }
 
-    let root_causes = error_data_folder
+    let mut root_causes = error_data_folder
         .read_dir()
         .unwrap()
         .into_iter()
         .filter_map(|dir| dir.ok())
         .filter(|dir| dir.path().is_dir())
-        .par_bridge()
+        // .par_bridge()
         .map(|case| {
             let mut nb_root_causes = case
                 .path()
@@ -90,7 +92,7 @@ fn main() {
                 .into_iter()
                 .filter_map(|file| file.ok())
                 .filter(|file| file.file_name().to_str().unwrap().ends_with(".csv"))
-                .par_bridge()
+                // .par_bridge()
                 .map(|file| {
                     let services = read_service_csv(&file.path().to_str().unwrap());
                     let file_name = file.file_name();
@@ -115,6 +117,7 @@ fn main() {
                     let columns = columns.iter().take(columns.len() / 2);
 
                     let file_root_causes = columns
+                        // .par_bridge()
                         .map(|col| {
                             let series = data.columns(&[*col, &format!("{}_train", col)]).unwrap();
 
@@ -123,7 +126,7 @@ fn main() {
                             let d = e_diagnosis(&datas[0], &datas[1]);
                             (col, d)
                         })
-                        .filter(|(_, d)| *d < 0.05);
+                        .filter(|(_, d)| *d < 0.005);
 
                     (
                         file_name.to_str().unwrap().to_owned(),
@@ -139,8 +142,18 @@ fn main() {
                 .map(|x| x.0.to_owned())
                 .collect::<Vec<_>>();
 
-            nb_root_causes
+            (
+                case.file_name().to_str().unwrap().parse::<i32>().unwrap(),
+                nb_root_causes,
+            )
         })
+        .collect::<Vec<_>>();
+
+    root_causes.sort_by_key(|el| el.0);
+
+    let root_causes = root_causes
+        .iter()
+        .map(|el| el.1.to_owned())
         .collect::<Vec<_>>();
 
     let json = json!(root_causes);
