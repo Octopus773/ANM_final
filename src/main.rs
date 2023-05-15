@@ -9,6 +9,38 @@ mod my_csv;
 
 use my_csv::read_service_csv;
 
+fn get_datas_from_series(series: &[&Series]) -> Vec<Vec<f64>> {
+    let dtype = series[1].dtype();
+
+    let datas: Vec<Vec<f64>> = match dtype {
+        DataType::Float64 => {
+            series
+                .iter()
+                .map(|s| s.f64().unwrap())
+                .into_iter()
+                .map(|it| it.into_iter().map(|el| el.unwrap()).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        },
+        DataType::Int64 => {
+            series
+                .iter()
+                .map(|s| s.i64().unwrap())
+                .into_iter()
+                .map(|it| it.into_iter().map(|el| el.unwrap() as f64).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        },
+        _ => panic!("Not implemented, {:?}", dtype),
+    };
+    datas
+}
+
+fn e_diagnosis(s_a: &[f64], s_n: &[f64]) -> f64 {
+    let mean_a = s_a.iter().sum::<f64>() / s_a.len() as f64;
+    let mean_n = s_n.iter().sum::<f64>() / s_n.len() as f64;
+
+    0.0
+}
+
 fn main() {
     let args: Vec<String> = env::args().take(3).collect();
     assert!(
@@ -32,24 +64,6 @@ fn main() {
         );
     }
 
-    let df = train_data.get("adservice2-0.csv").unwrap();
-
-    let out = df
-        .clone()
-        .lazy()
-        .filter(
-            col("timestamp")
-                .dt()
-                .hour()
-                .eq(16)
-                .and(col("timestamp").dt().minute().gt(2))
-                .and(col("timestamp").dt().minute().lt(10)),
-        )
-        .collect()
-        .unwrap();
-
-    println!("{:?}", out);
-
     for case in error_data_folder.read_dir().unwrap() {
         let case = case.unwrap();
         for file in case.path().read_dir().unwrap() {
@@ -60,36 +74,35 @@ fn main() {
             let services = read_service_csv(&file.path().to_str().unwrap());
             let file_name = file.file_name();
 
-            let start = services
-                .column("timestamp")
-                .unwrap()
-                .time()
-                .unwrap()
-                .into_iter()
-                .next()
-                .unwrap()
-                .unwrap();
-
-            let filter_expr = col("timestamp")
-                .dt()
-                .hour()
-                .eq(16)
-                .and(col("timestamp").dt().minute().gt(2))
-                .and(col("timestamp").dt().minute().lt(10));
-
             let service_train_data = train_data.get(file_name.to_str().unwrap()).unwrap();
 
-            let service_train_data = service_train_data
-                .clone()
+            let data = services
+                .join(
+                    &service_train_data,
+                    ["time"],
+                    ["time"],
+                    JoinType::Left,
+                    Some("_train".to_string()),
+                )
+                .unwrap()
                 .lazy()
-                .filter(filter_expr)
+                .select([col("*").exclude(["timestamp", "time"])])
                 .collect()
                 .unwrap();
 
-            for (test_serie, train_serie) in services.iter().zip(service_train_data.iter()) {
-                println!("{:?}", test_serie);
-                println!("{:?}", train_serie);
-                break;
+            let columns = data.get_column_names();
+            let columns = columns.iter().take(columns.len() / 2);
+
+
+            for column in columns {
+                let series = data
+                    .columns(&[*column, &format!("{}_train", column)])
+                    .unwrap();
+
+                let datas = get_datas_from_series(&series);
+                
+
+                
             }
             break;
         }

@@ -226,6 +226,7 @@ pub fn read_service_csv(path: &str) -> DataFrame {
         .with_column(
             (col("timestamp") * lit(1000)).cast(DataType::Datetime(TimeUnit::Milliseconds, None)),
         )
+        .with_column(col("timestamp").dt().time().alias("time"))
         .collect()
         .unwrap();
     df
