@@ -4,7 +4,7 @@ use std::collections::HashMap;
 pub fn plot_file_graph(
     file_name: &str,
     point_data: &HashMap<&&str, Vec<Vec<f64>>>,
-    result_data: &[(&&str, f64)],
+    result_data: &[(&&str, (f64, f64, f64, f64, f64, f64))],
 ) {
     let graph_file_name = format!("./graphs/{}.png", file_name);
     let root = BitMapBackend::new(&graph_file_name, (4444, 2500)).into_drawing_area();
@@ -12,7 +12,7 @@ pub fn plot_file_graph(
 
     let mut result_data = result_data.to_vec();
 
-    result_data.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Less));
+    result_data.sort_by(|a, b| a.1.0.partial_cmp(&b.1.0).unwrap_or(std::cmp::Ordering::Less));
 
     let mut areas = root.split_evenly(match result_data.len() {
         1 => (1, 1),
@@ -86,7 +86,7 @@ pub fn plot_file_graph(
         let area = area.titled(metrics.0, ("sans-serif", 40)).unwrap();
         let mut chart = ChartBuilder::on(&area)
             .margin(10)
-            .caption(metrics.1.to_string(), ("sans-serif", 30))
+            .caption(format!("{:.4}, {:.4}, {:.4}, {:.4}, {:.4}, {:.4}", metrics.1.0, metrics.1.1, metrics.1.2, metrics.1.3, metrics.1.4, metrics.1.5), ("sans-serif", 30))
             .y_label_area_size(30)
             .build_cartesian_2d(0..30, min..max)
             .unwrap();

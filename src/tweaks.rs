@@ -21,7 +21,7 @@ pub fn service_peers_check(services: &[(String, usize)]) -> Option<String> {
 
             (max.0.to_owned(), max.1, mean)
         })
-        .filter(|e| e.1 as f64 > e.2 as f64 * 2.2)
+        .filter(|e| e.1 as f64 > e.2 as f64 * 1.5)
         .max_by_key(|e| e.1);
 
     match abnormal_peer {

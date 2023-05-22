@@ -34,14 +34,16 @@ fn get_datas_from_series(series: &[&Series]) -> Vec<Vec<f64>> {
     datas
 }
 
-fn e_diagnosis(s_a: &[f64], s_n: &[f64]) -> f64 {
+fn e_diagnosis(s_a: &[f64], s_n: &[f64]) -> (f64, f64, f64, f64, f64, f64) {
     let mean_a = s_a.iter().sum::<f64>() / s_a.len() as f64;
     let mean_n = s_n.iter().sum::<f64>() / s_n.len() as f64;
 
     let variance_a = s_a.iter().map(|el| (el - mean_a).powi(2)).sum::<f64>() / s_a.len() as f64;
     let variance_n = s_n.iter().map(|el| (el - mean_n).powi(2)).sum::<f64>() / s_n.len() as f64;
 
-    // let std_n = variance_n.sqrt();
+    let std_a = variance_a.sqrt();
+    let std_n = variance_n.sqrt();
+
 
     // if variance_a == 0.0 || variance_n == 0.0 {
     //     return 0.0; // big value to not be considered as a root cause
@@ -56,11 +58,15 @@ fn e_diagnosis(s_a: &[f64], s_n: &[f64]) -> f64 {
     // anomaly_score
 
     if variance_a == 0.0 && variance_n == 0.0 && mean_a == mean_n {
-        return 10000.0; // big value to not be considered as a root cause
+        return (10000.0, mean_a, mean_n, std_a, std_n, -1.0); // big value to not be considered as a root cause
+    } else if (mean_a <= mean_n * 1.3 && mean_a >= mean_n * 0.7) || (mean_n - mean_a).abs() <= 1.0 {
+        if  std_a <= std_n * 1.5 && std_a >= std_n * 0.5 {
+            return (5000.0, mean_a, mean_n, std_a, std_n, -1.0);
+        } else if (std_n - std_a).abs() <= 0.1 {
+            return (4000.0, mean_a, mean_n, std_a, std_n, -1.0);
+        }
     } else if variance_a == 0.0 || variance_n == 0.0 {
-        return 0.0;
-    } else if (mean_a <= mean_n * 1.2 || mean_a >= mean_n * 0.8) && variance_a <= variance_n * 1.2 && variance_a >= variance_n * 0.8 {
-        return 5000.0;
+        return (0.0, mean_a, mean_n, std_a, std_n, -1.0);
     }
 
     let covariance_a_n = s_a
@@ -70,13 +76,14 @@ fn e_diagnosis(s_a: &[f64], s_n: &[f64]) -> f64 {
         .sum::<f64>()
         / (s_a.len() - 1) as f64;
 
-    let d = covariance_a_n.powi(2) / variance_a.max(variance_n);
+    let d = covariance_a_n / variance_a.max(variance_n);
+    // (variance_a * variance_n).sqrt();
 
     // println!(
     //     "mean_a: {}, mean_n: {}, variance_a: {}, variance_n: {}, covariance_a_n: {} d: {}",
     //     mean_a, mean_n, variance_a, variance_n, covariance_a_n, d
     // );
-    d
+    (d, mean_a, mean_n, std_a, std_n, covariance_a_n)
 }
 
 fn main() {
@@ -157,7 +164,7 @@ fn main() {
                             let d = e_diagnosis(&datas[0], &datas[1]);
                             (col, d)
                         })
-                        .filter(|(_, d)| *d < 10000.0)
+                        .filter(|(_, d)| (*d).0 < 10000.0)
                         .collect::<Vec<_>>();
 
                     if case_debug_graphs.is_some() && case_debug_graphs.unwrap() == case.file_name() {
@@ -168,7 +175,7 @@ fn main() {
                     );
                     }
 
-                    let file_root_causes = file_root_causes.iter().filter(|(_, d)| *d < 0.25);
+                    let file_root_causes = file_root_causes.iter().filter(|(_, d)| (*d).0 < 0.1).map(|rc| (rc.0, rc.1.0));
 
                     // if file_name == "currencyservice-1.csv" {
                     //     println!("Root cause details:");
