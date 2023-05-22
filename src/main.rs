@@ -62,7 +62,7 @@ fn e_diagnosis(s_a: &[f64], s_n: &[f64]) -> (f64, f64, f64, f64, f64, f64) {
     } else if (mean_a <= mean_n * 1.3 && mean_a >= mean_n * 0.7) || (mean_n - mean_a).abs() <= 1.0 {
         if  std_a <= std_n * 1.5 && std_a >= std_n * 0.5 {
             return (5000.0, mean_a, mean_n, std_a, std_n, -1.0);
-        } else if (std_n - std_a).abs() <= 0.1 {
+        } else if (std_n - std_a).abs() <= 0.08 {
             return (4000.0, mean_a, mean_n, std_a, std_n, -1.0);
         }
     } else if variance_a == 0.0 || variance_n == 0.0 {
@@ -204,7 +204,10 @@ fn main() {
             // println!("list of root causes: {:?}", nb_root_causes);
 
             nb_root_causes.sort_by_key(|el| el.1);
-            let nb_root_causes = nb_root_causes
+            if case.file_name().to_str() == case_debug_graphs {
+                println!("list of root causes: {:?}", nb_root_causes);
+            }
+            let list_root_causes = nb_root_causes
                 .iter()
                 .rev()
                 .map(|x| x.0.to_owned())
@@ -212,7 +215,7 @@ fn main() {
 
             (
                 case.file_name().to_str().unwrap().parse::<i32>().unwrap(),
-                nb_root_causes,
+                list_root_causes,
             )
         })
         .collect::<Vec<_>>();

@@ -29,3 +29,7 @@ pub fn service_peers_check(services: &[(String, usize)]) -> Option<String> {
         None => None,
     }
 }
+
+pub fn check_hierechy_anomaly(services: &[(String, usize)]) -> Option<String> {
+    None
+}
